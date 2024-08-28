@@ -1,0 +1,5 @@
+numpy <2
+pandas == 1.5.*
+streamlit == 1.36.*
+altair == 5.1.*
+st-gsheets-connection = 0.0.4
