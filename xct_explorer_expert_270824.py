@@ -5,8 +5,10 @@ import streamlit as st          # 1.36.0  #Note that 1.37.0 is incompatible
 import altair as alt            # 5.1.2
 from streamlit_gsheets import GSheetsConnection   # 0.0.4
 
-st.set_page_config(layout='wide',page_title='XCT-Explorer-Advanced v270824')
-tabCitation, tabInstructions, tabGeometry, tabComposition, tabSummary= st.tabs(['Disclosure','Instructions',':blue[Geometric Parameters]',':violet[Composition Parameters]','Summary'])
+##### update Sep2024: estetic improvements, typo corrections, new tab to create new phases with option to load it
+
+st.set_page_config(layout='wide',page_title='XCT-Explorer-Advanced v130924')
+tabCitation, tabInstructions, tabGeometry, tabComposition, tabDatabase, tabSummary= st.tabs(['Disclosure','Instructions',':blue[Geometric Parameters]',':violet[Composition Parameters]','Database','Summary'])
 
 with tabCitation:
     st.write('The XCT-Explorer-Advanced is a graphic user interface designed to be an intuitive and interactive tool to help planning CT experiments. New users are advised to use the simplified version of this app https://xct-explorer-v1.streamlit.app/. Note that the advanced features are experimental')
@@ -27,7 +29,7 @@ with tabInstructions:
     st.write('**Tip:** Different combinations of binning and detector size may give the same voxel size. In this case choose the combination with higher binning as that reduces the scan time and the data size')
     st.write(' **Step 2: Define the :violet[Composition] of the sample**')
     st.write('-	Select up to 4 of the most relevant Phases in the sample')
-    st.write('**Tip:** if the phase is not in the database add the attenuation coefficients to the table and select newPhase 1-3 at the end of the dropdown menu. Add at least 4 values between 40-200kV')
+    st.write('**Tip:** if the phase is not in the database go to the Database tab and add the attenuation coefficients to the table (or load from csv). Go back to the Composition tab and select newPhase 1-3 at the end of the dropdown menu. Add at least 4 values between 40-200kV')
     st.write('-	Input the approximate Volume Fraction for each phase')
     st.write('**Step 3: Tune the X-ray spectra**')
     st.write('-	Select an available filter')
@@ -39,10 +41,11 @@ with tabInstructions:
     st.write('-	If :red[Experiment Time] is red or warning pops out, consider reducing the scanning time to achieve images with higher quality')
     st.write('-	Confirm that the Experiment Time is realistic for your possibilities')
     st.write('**Tip:** to reduce the scanning time consider the following strategies: 1) reduce Diameter; 2) reduce Filter; 3)	increase Maximum Energy; 4) increase Binning, 5) decrease detector width')
-    st.write('- Export the scanning parameters in the **Summary** tab and discusse it with a CT-expert')
+    st.write('- Export the scanning parameters in the **Summary** tab and discuss it with a CT-expert')
     st.write('Note 1: the equations linking the various parameters in the resolution tab is only valid for a specific scanner configuration (in this version is a CoreTOM from Tescan with detector size 2856x2856)')    
     st.write('Note 2: the composition tab uses a database of phases adjusted from Hanna and Ketcham 2017 (10.1016/j.chemer.2017.01.006)')     
-    st.write('Note 3: Consider the Experiment Time is just a rough approximation')
+    st.write('Note 3: consider the Experiment Time is just a rough approximation')
+    st.write('**Tip:** data in tables can be saved as csv and plots can be saved as image or Jason and can be edited in Vega')
 
 @st.cache_data # Currently is using a database uploaded in google sheets. the scanner specific settings could also be loaded 
 def loadDatabase():
@@ -53,7 +56,7 @@ def loadDatabase():
     return phaseData
 database=loadDatabase()
 allPhases= database.columns.values.tolist()
-newPhases=['newPhase1','newPhase2','newPhase3','newPhase4']
+newPhases=['newPhase1','newPhase2','newPhase3']
 allPhases.extend(newPhases)
 allPhases.remove('Energy (kV)')
 
@@ -154,7 +157,7 @@ def transmission():
         attPhase1= database[menuPhase1]
         energy= database['Energy (kV)']
     transm1=np.exp(-attPhase1*inFracPhase1*slideDiameter/10)
-    if menuPhase2 == 'newPhase1':
+    if menuPhase2 == 'newPhase2':
         attPhase2=newDatabase2[menuPhase2]
         attPhase2=attPhase2.astype(float)
         energy= newDatabase2['Energy (kV)']
@@ -238,29 +241,46 @@ st.sidebar.metric(':blue[Minimum Feature Size (um)]', st.session_state['minimumF
 st.sidebar.metric(':blue[Data Size (Gb)]',st.session_state['DataSize'],
                   help='Expected size of the reconstructed 3D image. Relative to binning 1x, binning 2x generates 8x and binning 3x generates 27x smaller images')
 
+######################################################## ADD NEW Phases ########################################################################################
+with tabDatabase:
+    st.header('Add new phases',help='Add consecutive values at least between 60 and 200 kV')
+    colNewPhases,colPreviewPlot = st.columns(2)    
+    uploadDatabase=st.file_uploader(label='upload new phases')
+    with colNewPhases:    
+        if uploadDatabase:
+            newDatabase2=pd.read_csv(uploadDatabase, index_col=False)
+            newDatabase2=st.data_editor(newDatabase2, num_rows='dynamic', width=600, height=500)
+        else:
+            st.subheader('Input attenuation coefficients')
+            newDatabase=pd.DataFrame(columns=['Energy (kV)','newPhase1','newPhase2','newPhase3'],index=range(12))
+            newDatabase['Energy (kV)']=database['Energy (kV)']
+            newDatabase2=st.data_editor(newDatabase, num_rows='dynamic', width=600, height=500)
+    with colPreviewPlot:
+        st.subheader('Preview attenuation curves')
+        plot1= alt.Chart(newDatabase2,width='container',height=400).mark_line(color='lightblue').encode(
+                        x=alt.X('Energy (kV):Q').scale(domain=(10,180)),y=alt.Y('newPhase1:Q',title='Attenuation Coefficient (cm-1)').scale(type="log")).interactive()
+        plot2= alt.Chart(newDatabase2,width='container',height=400).mark_line(color='green').encode(
+                        x=alt.X('Energy (kV):Q').scale(domain=(10,180)),y=alt.Y('newPhase2:Q',title='Attenuation Coefficient (cm-1)').scale(type="log")).interactive()        
+        plot3= alt.Chart(newDatabase2,width='container',height=400).mark_line(color='green').encode(
+                        x=alt.X('Energy (kV):Q').scale(domain=(10,180)),y=alt.Y('newPhase3:Q',title='Attenuation Coefficient (cm-1)').scale(type="log")).interactive()
+        plot=plot1+plot2+plot3
+        st.altair_chart(plot,use_container_width=True) 
+
 ############################ Controls the display in the tab Composition ################################
 with tabComposition:
-    col1,col2,col3,col4=st.columns(4,gap='large')
+    col1,col3,col4=st.columns(3,gap='large')
     with col1:
-        st.subheader('Main phases from database', help='The phases of interest are the ones that must be distinguished to answer the scientific question. Tip: if the sample has a complex matrix group the phases into classes of similar attenuation')
+        st.subheader('Main phases from database', help='The phases of interest are the ones that must be distinguished to answer the scientific question. Tip: if the sample has a complex matrix group the phases into classes of similar attenuation. **IMPORTANT:** newphases must match the number, e.g. newPhase1 can only be selected in Phase1, not in Phase 2 menu')
         menuPhase1=st.selectbox(label=':blue[Phase1]',options=allPhases,index=0)
         menuPhase2=st.selectbox(label=':green[Phase2]',options=allPhases,index=0) 
         menuPhase3=st.selectbox(label=':orange[Phase3]',options=allPhases,index=0)
         menuPhase4=st.selectbox(label=':red[Phase4]',options=allPhases,index=0)  
-######################################################## ADD NEW Phases ########################################################################################
-    with col2:
-        st.subheader('Add new phases',help='If the phase of interest is not in the database add the attenuation coefficients manually')
-        with st.expander('Attenuation coefficients'):
-            newDatabase=pd.DataFrame(columns=['Energy (kV)','newPhase1','newPhase2','newPhase3'],index=range(12))
-            newDatabase['Energy (kV)']=database['Energy (kV)']
-            newDatabase2=st.data_editor(newDatabase, num_rows='dynamic')
     with col3:
-        st.subheader('Volume fractions', 
-                  help='If you are an x-ray crossing the sample, how much yould you need to cross of each phase (values 0-1 and the sum of all phases should be 1-porosity)')
+        st.subheader('Volume fractions',help='If you are an x-ray crossing the sample, how much yould you need to cross of each phase (values 0-1 and the sum of all phases should be 1-porosity)')
         inFracPhase1= st.number_input('Phase1 Volume Fraction (0-1)', value=0.0, min_value=0.0, max_value=1.0, step=0.02)
         inFracPhase2= st.number_input('Phase2 Volume Fraction (0-1)', value=0.0, min_value=0.0, max_value=1.0, step=0.02)
         inFracPhase3= st.number_input('Phase3 Volume Fraction (0-1)', value=0.0, min_value=0.0, max_value=1.0, step=0.02)
-        inFracPhase4= st.number_input('Phase4 Volume Fraction (0-1)', value=0.0, min_value=0.0, max_value=1.0, step=0.02)
+        inFracPhase4= st.number_input('Phase4 Volume Fraction (0-1)', value=0.0, min_value=0.0, max_value=1.0, step=0.02) 
         porosity= int((1-inFracPhase1-inFracPhase2-inFracPhase3-inFracPhase4)*100)    
         st.write('Porosity (%):',porosity) #help='1 minus the sum of the volume fractions. Air is assumed to have attenuation coefficient =0'
     with col4:
@@ -291,7 +311,7 @@ with tabComposition:
         attenuation_energy()
         st.write(':grey[Each line corresponds to a phase selected with the same color]')
 
-############################ Controls the sidebar ################################
+############################ Display the sidebar ################################
 st.sidebar.title('  ') #just some space
 st.sidebar.title(':violet[Contrast]', 
                  help='Contrast is reflected in the grey-scale of the different phases in the final image. It can be estimated by the difference in the attenuation curves within the energies boundaries [minimum transmissible energy, Emax], see Attenuation plot in the tab :violet["Composition"]')
@@ -354,11 +374,18 @@ else:
 
 with tabSummary:
     buttExport=st.button(label='Export parameters')
+    colParam, colComp = st.columns(2)
     if buttExport:
         scanParameters={'Parameter':['Voxel Size (um)','Purpose', 'Binning', 'Detector size','Energy', 'Filter Material','Filter Thickness (um)','Data Size (Gb)','Expected time (hrs)'],
-                        'Value':[st.session_state['voxelSize'],radio1,radio3,radio4,st.session_state['maximumEnergy'],menuFilter,st.session_state['filterThickness'],st.session_state['DataSize'],scanTime],
-                        'Sample':['Sample Diameter (mm)','Phase1','Fraction Phase1','Phase2','Fraction Phase2','Phase3','Fraction Phase3','Phase4','Fraction Phase4'],
+                        'Value':[st.session_state['voxelSize'],radio1,radio3,radio4,st.session_state['maximumEnergy'],menuFilter,st.session_state['filterThickness'],st.session_state['DataSize'],scanTime]}
+        sampleComposition={'Sample':['Sample Diameter (mm)','Phase1','Fraction Phase1','Phase2','Fraction Phase2','Phase3','Fraction Phase3','Phase4','Fraction Phase4'],
                         'Composition':[st.session_state['diameter'],menuPhase1,inFracPhase1,menuPhase2,inFracPhase2,menuPhase3,inFracPhase3,menuPhase4,inFracPhase4]}
         scanParameters=pd.DataFrame(scanParameters)
-        st.dataframe(scanParameters, width=800,hide_index=True)
-        #pd.DataFrame.to_csv()
+        sampleComposition=pd.DataFrame(sampleComposition)
+
+        with colParam:
+            st.dataframe(scanParameters, width=250, hide_index=True)
+        with colComp:
+            st.dataframe(sampleComposition, width=250, hide_index=True) 
+
+        st.download_button(label='Save parameters',data=scanParameters.to_csv(),file_name='scanParameters.csv')       
